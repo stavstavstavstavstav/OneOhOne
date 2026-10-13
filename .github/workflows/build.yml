@@ -1,0 +1,55 @@
+name: Build OneOhOne
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Configure
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0
+
+      - name: Build
+        run: cmake --build build --config Release --parallel 4
+
+      - name: Sign (ad-hoc) and package
+        run: |
+          mkdir -p dist
+          VST3=$(find build -type d -name "OneOhOne.vst3" -path "*Release*" | head -n 1)
+          AU=$(find build -type d -name "OneOhOne.component" -path "*Release*" | head -n 1)
+          codesign --force --deep --sign - "$VST3"
+          codesign --force --deep --sign - "$AU"
+          ditto -c -k --keepParent "$VST3" dist/OneOhOne-VST3-mac.zip
+          ditto -c -k --keepParent "$AU" dist/OneOhOne-AU-mac.zip
+
+      - uses: actions/upload-artifact@v5
+        with:
+          name: OneOhOne-mac
+          path: dist/*.zip
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Configure
+        run: cmake -B build
+
+      - name: Build
+        run: cmake --build build --config Release --parallel 4
+
+      - name: Package
+        shell: pwsh
+        run: |
+          $vst3 = Get-ChildItem -Path build -Recurse -Directory -Filter "OneOhOne.vst3" | Where-Object { $_.FullName -match "Release" } | Select-Object -First 1
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Compress-Archive -Path $vst3.FullName -DestinationPath dist/OneOhOne-VST3-windows.zip
+
+      - uses: actions/upload-artifact@v5
+        with:
+          name: OneOhOne-windows
+          path: dist/*.zip
